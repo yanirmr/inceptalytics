@@ -112,24 +112,33 @@ def st_indexed_triangle(row_idxs: list, col_idxs: list = None, offset: int = 0, 
     return indexed_grid
 
 
+def get_focus_dist_per_sentence(layer_annos):
+    num_tagged_sentences = dict()
+    for label in layer_annos.labels:
+        filtered_annos = layer_annos.filter_sentences_by_labels(label)
+        num_tagged_sentences[label] = len(filtered_annos.data_frame['sentence'].unique())
+    return num_tagged_sentences
+
+
 @st.cache
 def load_project(file):
     return Project.from_zipped_xmi(file)
+
 
 st.set_page_config("Inception Analytics", None, "wide", "auto")
 
 body, stats = st.columns([4, 1])
 
 body.write(
-"""
-# Inception Analytics
-
-More than you ever wanted to know about your annotation project
-"""
+    """
+    # Inception Analytics
+    
+    More than you ever wanted to know about your annotation project
+    """
 )
 
 uploaded_file = st.sidebar.file_uploader("Upload inception export file (zipped XMI format)")
-
+# TODO: add an option to connect to INCEPTION via API
 project = None
 
 if uploaded_file:
@@ -146,26 +155,26 @@ if project:
 
     layer = st.sidebar.selectbox(
         'Select Layer',
-       layers,
-       format_func=lambda x: x.split('.')[-1]
+        layers,
+        format_func=lambda x: x.split('.')[-1]
     )
-    
+
     feature = st.sidebar.selectbox(
         'Select Feature',
         sorted(project.features(layer))
     )
 
-    iaa_type = st.sidebar.selectbox(
-        'Select IAA type',
-        ['krippendorff','gamma']
-    )
+    # iaa_type = st.sidebar.selectbox(
+    #     'Select IAA type',
+    #     ['krippendorff', 'gamma']
+    # )
 
     annotators = sorted(project.annotators)
     if len(annotators) > 0:
         selected_annotators = st.sidebar.expander('Select Annotators').multiselect(
             "Annotators",
             options=annotators,
-            default=list(annotators),
+            default="alona",
             key="annotator_select",
         )
     else:
@@ -186,7 +195,7 @@ if project:
 
     view = project.select(
         annotation=project.feature_path(layer, feature),
-        annotators=selected_annotators, 
+        annotators=selected_annotators,
         source_files=selected_files
     )
 
@@ -230,74 +239,93 @@ if project:
 
     body.write(count_overview)
 
-    body.write('## Progress')
+    body.write('## Focus Progress')
+
+    focus_layer = 'webanno.custom.Focus1'
+    feature = 'Focus'
+    focus_layer_feature_path = f'{focus_layer}>{feature}'
+    focus_annos = project.select(annotation=focus_layer_feature_path)
+
+    sentence_layer = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
+    feature = 'id'
+    sentence_feature_path = f'{sentence_layer}>{feature}'
+    sentence_annos = project.select(annotation=sentence_feature_path)
+
+    num_total_sentences = len(sentence_annos.data_frame['sentence'].unique())
+    num_focus_tagged_sentences = len(focus_annos.data_frame['sentence'].unique())
+    body.write(f'Total sentences: {num_total_sentences}')
+    body.write(f'Focus tagged sentences: {num_focus_tagged_sentences}')
+    body.write(f'Focus tagged words: {focus_annos.count()}')
+
+    body.write(f'Focus tagged words: {get_focus_dist_per_sentence(focus_annos)}')
+
     show_percentages_per_file = body.checkbox('Show completion status of files.')
     body.write(progress_chart(view, normalize=show_percentages_per_file))
 
-    if len(view.annotators) == 1:
-        st.info('Only one annotator provided annotations for this label. '
-                'Agreement statistics and confusion matrices are therefore omitted.')
-        st.stop()
+    # if len(view.annotators) == 1:
+    #     st.info('Only one annotator provided annotations for this label. '
+    #             'Agreement statistics and confusion matrices are therefore omitted.')
+    #     st.stop()
 
-    body.write('## Agreement Statistics')
-    iaa = view.iaa(measure=iaa_type)
-    body.metric(label=iaa_type, value=str(np.round(iaa, 4)))
-    body.write(view.pairwise_kappa())
+    # body.write('## Agreement Statistics')
+    # iaa = view.iaa(measure=iaa_type)
+    # body.metric(label=iaa_type, value=str(np.round(iaa, 4)))
+    # body.write(view.pairwise_kappa())
+    #
+    # body.write('### IAA by Label')
+    #
+    # individual_iaa_labels = body.multiselect(
+    #     'Labels to calculate IAA',
+    #     options=view.labels,
+    #     default=view.labels,
+    #     key='individual_iaa_labels'
+    # )
+    #
+    # if individual_iaa_labels:
+    #     if iaa_type == 'gamma':
+    #         iaa_label_scores = [view.filter_labels(label).iaa(measure=iaa_type) for label in individual_iaa_labels]
+    #         body.write(pd.Series(iaa_label_scores, index=individual_iaa_labels, name=iaa_type))
+    #     else:
+    #         body.warning('Unitising IAA per Label is currently only supported for the _gamma_ IAA measure. '
+    #                      'Please select the appropriate IAA statistic on the left. '
+    #                      'Keep in mind that calculating the _gamma_ measure per label may take a while.')
+    #
+    # body.write('## Confusion Matrices')
+    # only_differences = body.checkbox('Display only differences', False)
+    #
+    # if len(annotators) > 2:
+    #     body.write('### Total Confusion Matrix')
+    #     cms_total = view.confusion_matrices(only_differences, aggregate='total')
+    #     body.write(heatmap(cms_total))
+    #
+    # body.write('### Individual Confusion Matrices')
+    # by_annotator = body.checkbox('Aggregate by annotators', False)
+    #
+    # cms = view.confusion_matrices(only_differences, aggregate='by_annotator' if by_annotator else None)
+    # conf_plots = cms.apply(heatmap)
 
-    body.write('### IAA by Label')
-
-    individual_iaa_labels = body.multiselect(
-        'Labels to calculate IAA',
-        options=view.labels,
-        default=view.labels,
-        key='individual_iaa_labels'
-    )
-
-    if individual_iaa_labels:
-        if iaa_type == 'gamma':
-            iaa_label_scores = [view.filter_labels(label).iaa(measure=iaa_type) for label in individual_iaa_labels]
-            body.write(pd.Series(iaa_label_scores, index=individual_iaa_labels, name=iaa_type))
-        else:
-            body.warning('Unitising IAA per Label is currently only supported for the _gamma_ IAA measure. '
-                         'Please select the appropriate IAA statistic on the left. '
-                         'Keep in mind that calculating the _gamma_ measure per label may take a while.')
-
-    body.write('## Confusion Matrices')
-    only_differences = body.checkbox('Display only differences', False)
-
-    if len(annotators) > 2:
-        body.write('### Total Confusion Matrix')
-        cms_total = view.confusion_matrices(only_differences, aggregate='total')
-        body.write(heatmap(cms_total))
-
-    body.write('### Individual Confusion Matrices')
-    by_annotator = body.checkbox('Aggregate by annotators', False)
-
-    cms = view.confusion_matrices(only_differences, aggregate='by_annotator' if by_annotator else None)
-    conf_plots = cms.apply(heatmap)
-
-    # TODO: cleanup
-    # display a list of matrices
-    if by_annotator:
-        for plot in conf_plots:
-            body.write(plot)
-    # find good layout to present pairwise matrices
-    else:
-        max_cols = body.number_input('Maximum Number of Columns', min_value=1, value=4)
-        if len(project.annotators) <= max_cols:  # organise matrices in triangle
-            grid = st_indexed_triangle(project.annotators, offset=1)
-            for idx, plot in conf_plots.iteritems():
-                a, b = idx
-                grid[a][b].write(plot)
-        else:  # organise plots in grid, square if possible
-            n_annotators = len(annotators)
-            n_cols = min(ceil(n_annotators ** 0.5), max_cols)
-            n_rows = ceil(n_annotators / n_cols)
-            grid = st_grid(n_rows, n_cols)
-
-            i = j = 0
-            for plot in conf_plots:
-                grid[i][j].write(plot)
-                j = (j + 1) % n_cols
-                if j == 0:
-                    i = (i + 1) % n_rows
+    # # TODO: cleanup
+    # # display a list of matrices
+    # if by_annotator:
+    #     for plot in conf_plots:
+    #         body.write(plot)
+    # # find good layout to present pairwise matrices
+    # else:
+    #     max_cols = body.number_input('Maximum Number of Columns', min_value=1, value=4)
+    #     if len(project.annotators) <= max_cols:  # organise matrices in triangle
+    #         grid = st_indexed_triangle(project.annotators, offset=1)
+    #         for idx, plot in conf_plots.iteritems():
+    #             a, b = idx
+    #             grid[a][b].write(plot)
+    #     else:  # organise plots in grid, square if possible
+    #         n_annotators = len(annotators)
+    #         n_cols = min(ceil(n_annotators ** 0.5), max_cols)
+    #         n_rows = ceil(n_annotators / n_cols)
+    #         grid = st_grid(n_rows, n_cols)
+    #
+    #         i = j = 0
+    #         for plot in conf_plots:
+    #             grid[i][j].write(plot)
+    #             j = (j + 1) % n_cols
+    #             if j == 0:
+    #                 i = (i + 1) % n_rows

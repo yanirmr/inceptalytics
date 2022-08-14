@@ -32,9 +32,9 @@ for annotator in project.annotators:
 pos_type = "de.tudarmstadt.ukp.dkpro.core.api.lexmorph.type.pos.POS"
 
 view = project.select(
-        annotation=project.feature_path(pos_type, "coarseValue"), 
-        annotators=project.annotators, 
-        source_files=project.source_file_names
+    annotation=project.sentence_feature_path(pos_type, "coarseValue"),
+    annotators=project.annotators,
+    source_files=project.source_file_names
 )
 
 print('# pos annotations in view:', len(view.annotations))
