@@ -16,7 +16,7 @@ from inceptalytics import Project
 
 # project = Project.from_zipped_xmi('C:\\Users\\User\\Dropbox\\Projects\\segmenter\\data\\tagged_tal.zip')
 
-project = Project.from_remote(project='this-american-life',
+project = Project.from_remote(project='this american life',
                               remote_url='http://harp.wisdom.weizmann.ac.il:8080/',
                               auth=('yanir', 'yanir'))  # TODO: replace with "remote" credentials
 

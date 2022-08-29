@@ -30,7 +30,7 @@ class Project:
                 Note that the Remote API must be enabled and the user must have the REMOTE role.
         """
         client = Pycaprio(remote_url, authentication=auth)
-
+        project = project.replace(" ", "-")
         if isinstance(project, str):
             projects = [p for p in client.api.projects() if p.project_name == project]
 
