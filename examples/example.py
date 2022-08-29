@@ -14,11 +14,11 @@ Projects can be loaded in two ways:
 
 from inceptalytics import Project
 
-project = Project.from_zipped_xmi('C:\\Users\\User\\Dropbox\\Projects\\segmenter\\data\\tagged_tal.zip')
+# project = Project.from_zipped_xmi('C:\\Users\\User\\Dropbox\\Projects\\segmenter\\data\\tagged_tal.zip')
 
-# project = Project.from_remote(project='my_project_name',
-#                              remote_url='https://my.inception.instance',
-#                              auth=('user', 'password'))
+project = Project.from_remote(project='this-american-life',
+                              remote_url='http://harp.wisdom.weizmann.ac.il:8080/',
+                              auth=('yanir', 'yanir'))  # TODO: replace with "remote" credentials
 
 """Once a project is loaded, you can access different properties such as annotators and annotated files. 
 Per default, those include only annotators who annotated at least a single document and documents that contain at least a single annotation.
@@ -71,11 +71,10 @@ comments_annos = project.select(annotation=comments_layer_feature_path)
 
 num_tagged_sentences = dict()
 for label in focus_annos.labels:
-    filtered_annos = focus_annos.filter_sentences_by_label(label)
+    filtered_annos = focus_annos.filter_sentences_by_labels(label)
     num_tagged_sentences[label] = len(filtered_annos.data_frame['sentence'].unique())
 
 print(num_tagged_sentences)
-
 
 """You can also create a view that contains a specific subset of files and annotators."""
 
@@ -123,7 +122,7 @@ To get an overview over the annotation, you can look at the document-annotator m
 """
 comments_annos.document_annotator_matrix
 
-#focus_annos.document_annotator_matrix
+# focus_annos.document_annotator_matrix
 
 """It may be useful to have a look at the text that was annotated to adjudicate disagreements."""
 #
