@@ -1,7 +1,5 @@
 import streamlit as st
-import numpy as np
 from inceptalytics.analytics import Project
-from math import ceil
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -137,12 +135,10 @@ body.write(
     """
 )
 
-uploaded_file = st.sidebar.file_uploader("Upload inception export file (zipped XMI format)")
-# TODO: add an option to connect to INCEPTION via API
-project = None
+project = Project.from_remote(project='this-american-life',
+                              remote_url='http://harp.wisdom.weizmann.ac.il:8080/',
+                              auth=('yanir', 'yanir'))
 
-if uploaded_file:
-    project = load_project(uploaded_file)
 
 if project:
     ## if you already know which layers you are interested in, you may want to hard-code them here.
@@ -164,10 +160,6 @@ if project:
         sorted(project.features(layer))
     )
 
-    # iaa_type = st.sidebar.selectbox(
-    #     'Select IAA type',
-    #     ['krippendorff', 'gamma']
-    # )
 
     annotators = sorted(project.annotators)
     if len(annotators) > 0:
