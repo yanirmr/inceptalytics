@@ -13,6 +13,38 @@ def progress_chart(view, include_empty_files=True, normalize=False):
     return heatmap(counts)
 
 
+def progress_chart_by_chapter(focus_annos, comments_annos, prototype_annos, include_empty_files=True,
+                              normalize=False):
+    num_comments_tagged_sentences = dict()
+    for label in comments_annos.labels:
+        filtered_annos = comments_annos.filter_sentences_by_labels(label)
+        num_comments_tagged_sentences[label] = filtered_annos.data_frame.groupby('source_file')['sentence'].nunique()
+
+    sentences_without_focus = num_comments_tagged_sentences["N.F"]
+    sentences_with_focus = focus_annos.data_frame.groupby('source_file')['sentence'].nunique()
+    short_but_problematic_sentences = num_comments_tagged_sentences["B.C"] + num_comments_tagged_sentences["T.C"] + \
+                                      num_comments_tagged_sentences["Overlap"]
+    num_prototype_tagged_sentences = dict()
+    for label in prototype_annos.labels:
+        filtered_annos = prototype_annos.filter_sentences_by_labels(label)
+        num_prototype_tagged_sentences[label] = filtered_annos.data_frame.groupby('source_file')['sentence'].nunique()
+
+    body.write(num_prototype_tagged_sentences.keys())
+    long_sentences = num_prototype_tagged_sentences["!D"] + num_prototype_tagged_sentences["!C"] + \
+                     num_prototype_tagged_sentences["!Q"]
+    total_sentences = prototype_annos.data_frame.groupby('source_file')['sentence'].nunique()
+    df = pd.concat([sentences_with_focus, sentences_without_focus, short_but_problematic_sentences, long_sentences,
+                    total_sentences], axis=1)
+    df.columns = ['sentences_with_focus', 'sentences_without_focus', 'short_but_problematic_sentences',
+                  'long_sentences', "total_sentences"]
+    df = df.fillna(0)
+    df = df.astype(int)
+    df["sentences_to_be_tagged"] = df.total_sentences - df.sentences_without_focus - df.sentences_with_focus - \
+                                   df.short_but_problematic_sentences - df.long_sentences
+
+    body.write(df)
+
+
 def heatmap(table: pd.DataFrame):
     fig = go.Figure(data=go.Heatmap(
         z=table.values,
@@ -119,8 +151,10 @@ def get_focus_dist_per_sentence(layer_annos):
 
 
 @st.cache
-def load_project(file):
-    return Project.from_zipped_xmi(file)
+def load_project():
+    return Project.from_remote(project='this-american-life',
+                               remote_url='http://harp.wisdom.weizmann.ac.il:8080/',
+                               auth=('yanir', 'yanir'))
 
 
 st.set_page_config("Inception Analytics", None, "wide", "auto")
@@ -138,7 +172,6 @@ body.write(
 project = Project.from_remote(project='this-american-life',
                               remote_url='http://harp.wisdom.weizmann.ac.il:8080/',
                               auth=('yanir', 'yanir'))
-
 
 if project:
     ## if you already know which layers you are interested in, you may want to hard-code them here.
@@ -160,13 +193,12 @@ if project:
         sorted(project.features(layer))
     )
 
-
     annotators = sorted(project.annotators)
     if len(annotators) > 0:
         selected_annotators = st.sidebar.expander('Select Annotators').multiselect(
             "Annotators",
             options=annotators,
-            default="alona",
+            default=["alona", "smadar", "tirza"],
             key="annotator_select",
         )
     else:
@@ -192,44 +224,51 @@ if project:
     )
 
     nr_of_annotated_files = len(project.source_file_names)
-    nr_of_all_files = nr_of_annotated_files + len(project.empty_source_file_names)
 
-    stats.write("## Project Stats")
-    stats.write('Custom layers: ' + str(len(project.custom_layers)))
-    stats.write('Annotators: ' + str(len(project.annotators)))
-    stats.write(f"Files (annotated / all): {nr_of_annotated_files}/{nr_of_all_files}")
 
-    stats.write("## Current View")
-    stats.write(f'Selected Annotation: **{feature}**')
-    stats.write('Selected annotators: ' + str(len(selected_annotators)))
-    stats.write('Selected files: ' + str(len(selected_files)))
 
-    counts = view.count(['annotator', 'source_file'])
+    body.write('## Focus Annotation Overview')
+    body.write('### How many sentences have been tagged for focus?')
+    focus_layer = 'webanno.custom.Focus1'
+    feature = 'Focus'
+    feature_path = f'{focus_layer}>{feature}'
+    focus_annos = project.select(annotation=feature_path)
+    num_focus_tagged_words = len(focus_annos.data_frame['sentence'])
+    body.write(f'The number of focused words:  {num_focus_tagged_words}')
+    num_focus_tagged_sentences = len(focus_annos.data_frame['sentence'].unique())
+    body.write(f'The number of sentences with one or more focused words:  {num_focus_tagged_sentences}')
 
-    stats.write(f'Annotations in Selection: {sum(counts)}')
-    stats.write('### Breakdown by Annotator')
-    stats.write(view.count('annotator'))
-    stats.write('### Breakdown by Labels')
-    stats.write(view.value_counts())
+    comments_layer = 'webanno.custom.Comments'
+    feature = 'Comments'
+    feature_path = f'{comments_layer}>{feature}'
+    comments_annos = project.select(annotation=feature_path)
+    num_comments_tagged_sentences = dict()
+    for label in comments_annos.labels:
+        filtered_annos = comments_annos.filter_sentences_by_labels(label)
+        num_comments_tagged_sentences[label] = len(filtered_annos.data_frame['sentence'].unique())
+    body.write(f'The number of sentences without focused words: {num_comments_tagged_sentences["N.F"]}')
 
-    body.write('## Annotation Overview')
+    body.write(focus_annos.data_frame.groupby('source_file')['sentence'].nunique())
+    prototype_layer = 'webanno.custom.Prototype'
+    feature = 'Prototype'
+    prototype_layer_feature_path = f'{prototype_layer}>{feature}'
+    prototype_annos = project.select(annotation=prototype_layer_feature_path)
+    progress_chart_by_chapter(focus_annos, comments_annos, prototype_annos)
+
     body.write('Select details to include in the overview')
 
-    split_by_files = body.checkbox('Files')
-    split_by_labels = body.checkbox('Labels')
+    # split_by_files = body.checkbox('Files')
+    # split_by_labels = body.checkbox('Labels')
 
-    count_fn = view.value_counts if split_by_labels else view.count
-    levels = ['annotator']
-
-    if split_by_files:
-        levels.append('source_file')
-
+    count_fn = view.value_counts  # if split_by_labels else view.count
+    levels = ["source_file"]
     count_overview = count_fn(grouped_by=levels)
 
     if count_overview.index.nlevels > 1:
         count_overview = count_overview.unstack(level=0)
 
-    body.write(count_overview)
+    count_overview = count_overview.fillna(0).astype(int)
+    body.write(count_overview.T)
 
     body.write('## Focus Progress')
 
@@ -238,21 +277,20 @@ if project:
     focus_layer_feature_path = f'{focus_layer}>{feature}'
     focus_annos = project.select(annotation=focus_layer_feature_path)
 
-    sentence_layer = 'de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Sentence'
-    feature = 'id'
-    sentence_feature_path = f'{sentence_layer}>{feature}'
-    sentence_annos = project.select(annotation=sentence_feature_path)
-
-    num_total_sentences = len(sentence_annos.data_frame['sentence'].unique())
-    num_focus_tagged_sentences = len(focus_annos.data_frame['sentence'].unique())
-    body.write(f'Total sentences: {num_total_sentences}')
-    body.write(f'Focus tagged sentences: {num_focus_tagged_sentences}')
-    body.write(f'Focus tagged words: {focus_annos.count()}')
-
-    body.write(f'Focus tagged words: {get_focus_dist_per_sentence(focus_annos)}')
-
     show_percentages_per_file = body.checkbox('Show completion status of files.')
     body.write(progress_chart(view, normalize=show_percentages_per_file))
+
+    body.write(f"## Current View:  **{feature}**")
+    # body.write(f'Selected Annotation: **{feature}**')
+    body.write('Selected annotators: ' + str(len(selected_annotators)))
+    body.write('Selected files: ' + str(len(selected_files)))
+    counts = view.count(['annotator', 'source_file'])
+    body.write(f'Annotations in Selection: {sum(counts)}')
+
+    body.write('### Breakdown by Annotator')
+    body.write(view.count('annotator'))
+    body.write('### Breakdown by Labels')
+    body.write(view.value_counts())
 
     # if len(view.annotators) == 1:
     #     st.info('Only one annotator provided annotations for this label. '
