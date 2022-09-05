@@ -1,4 +1,6 @@
 import streamlit as st
+
+import inceptalytics
 from inceptalytics.analytics import Project
 import pandas as pd
 import plotly.graph_objects as go
@@ -15,6 +17,7 @@ def progress_chart(view, include_empty_files=True, normalize=False):
 
 def progress_chart_by_chapter(focus_annos, comments_annos, prototype_annos, include_empty_files=True,
                               normalize=False):
+    # TODO: this function suffer from performance issues
     num_comments_tagged_sentences = dict()
     for label in comments_annos.labels:
         filtered_annos = comments_annos.filter_sentences_by_labels(label)
@@ -29,7 +32,6 @@ def progress_chart_by_chapter(focus_annos, comments_annos, prototype_annos, incl
         filtered_annos = prototype_annos.filter_sentences_by_labels(label)
         num_prototype_tagged_sentences[label] = filtered_annos.data_frame.groupby('source_file')['sentence'].nunique()
 
-    body.write(num_prototype_tagged_sentences.keys())
     long_sentences = num_prototype_tagged_sentences["!D"] + num_prototype_tagged_sentences["!C"] + \
                      num_prototype_tagged_sentences["!Q"]
     total_sentences = prototype_annos.data_frame.groupby('source_file')['sentence'].nunique()
@@ -150,6 +152,60 @@ def get_focus_dist_per_sentence(layer_annos):
     return num_tagged_sentences
 
 
+def side_bar(project):
+    if project.custom_layers:
+        layers = sorted(project.custom_layers)
+    else:
+        layers = sorted(project.layers)
+
+    layer = st.sidebar.selectbox(
+        'Select Layer',
+        layers,
+        format_func=lambda x: x.split('.')[-1]
+    )
+
+    feature = st.sidebar.selectbox(
+        'Select Feature',
+        sorted(project.features(layer))
+    )
+
+    annotators = sorted(project.annotators)
+    selected_annotators = list()
+    if len(annotators) > 0:
+        selected_annotators = st.sidebar.expander('Select Annotators').multiselect(
+            "Annotators",
+            options=annotators,
+            default=["alona", "smadar", "tirza"],
+            key="annotator_select",
+        )
+    else:
+        st.warning('No annotators found in the project.')
+        st.stop()
+
+    files = sorted(project.source_file_names)
+    selected_files = list()
+    if len(files) > 0:
+        selected_files = st.sidebar.expander('Select Source Files').multiselect(
+            "Files",
+            options=files,
+            default=list(files),
+            key="files_select",
+        )
+    else:
+        st.warning('No source files found in the project.')
+        st.stop()
+
+    return layer, feature, selected_annotators, selected_files
+
+
+def get_feature_annotation(project: inceptalytics.Project, layer: str, feature: str) -> pd.DataFrame:
+    required_layer = layer
+    required_feature = feature
+    feature_path = f'{required_layer}>{required_feature}'
+    annotations = project.select(annotation=feature_path)
+    return annotations
+
+
 @st.cache
 def load_project():
     return Project.from_remote(project='this-american-life',
@@ -169,97 +225,38 @@ body.write(
     """
 )
 
-project = Project.from_remote(project='this-american-life',
-                              remote_url='http://harp.wisdom.weizmann.ac.il:8080/',
-                              auth=('yanir', 'yanir'))
+project = load_project()
 
 if project:
-    ## if you already know which layers you are interested in, you may want to hard-code them here.
-    ## especially if you are using just some elements of the build-in layers 
-    layers = []
-    if project.custom_layers:
-        layers = sorted(project.custom_layers)
-    else:
-        layers = sorted(project.layers)
-
-    layer = st.sidebar.selectbox(
-        'Select Layer',
-        layers,
-        format_func=lambda x: x.split('.')[-1]
-    )
-
-    feature = st.sidebar.selectbox(
-        'Select Feature',
-        sorted(project.features(layer))
-    )
-
-    annotators = sorted(project.annotators)
-    if len(annotators) > 0:
-        selected_annotators = st.sidebar.expander('Select Annotators').multiselect(
-            "Annotators",
-            options=annotators,
-            default=["alona", "smadar", "tirza"],
-            key="annotator_select",
-        )
-    else:
-        st.warning('No annotators found in the project.')
-        st.stop()
-
-    files = sorted(project.source_file_names)
-    if len(files) > 0:
-        selected_files = st.sidebar.expander('Select Source Files').multiselect(
-            "Files",
-            options=files,
-            default=list(files),
-            key="files_select",
-        )
-    else:
-        st.warning('No source files found in the project.')
-        st.stop()
-
-    view = project.select(
-        annotation=project.feature_path(layer, feature),
-        annotators=selected_annotators,
-        source_files=selected_files
-    )
-
-    nr_of_annotated_files = len(project.source_file_names)
-
-
+    layer, feature, selected_annotators, selected_files = side_bar(project)
 
     body.write('## Focus Annotation Overview')
     body.write('### How many sentences have been tagged for focus?')
-    focus_layer = 'webanno.custom.Focus1'
-    feature = 'Focus'
-    feature_path = f'{focus_layer}>{feature}'
-    focus_annos = project.select(annotation=feature_path)
+    focus_annos = get_feature_annotation(project, 'webanno.custom.Focus1', 'Focus')
     num_focus_tagged_words = len(focus_annos.data_frame['sentence'])
     body.write(f'The number of focused words:  {num_focus_tagged_words}')
     num_focus_tagged_sentences = len(focus_annos.data_frame['sentence'].unique())
     body.write(f'The number of sentences with one or more focused words:  {num_focus_tagged_sentences}')
 
-    comments_layer = 'webanno.custom.Comments'
-    feature = 'Comments'
-    feature_path = f'{comments_layer}>{feature}'
-    comments_annos = project.select(annotation=feature_path)
+    comments_annos = get_feature_annotation(project, 'webanno.custom.Comments', 'Comments')
     num_comments_tagged_sentences = dict()
     for label in comments_annos.labels:
         filtered_annos = comments_annos.filter_sentences_by_labels(label)
         num_comments_tagged_sentences[label] = len(filtered_annos.data_frame['sentence'].unique())
     body.write(f'The number of sentences without focused words: {num_comments_tagged_sentences["N.F"]}')
 
-    body.write(focus_annos.data_frame.groupby('source_file')['sentence'].nunique())
-    prototype_layer = 'webanno.custom.Prototype'
-    feature = 'Prototype'
-    prototype_layer_feature_path = f'{prototype_layer}>{feature}'
-    prototype_annos = project.select(annotation=prototype_layer_feature_path)
+    prototype_annos = get_feature_annotation(project, 'webanno.custom.Prototype', 'Prototype')
     progress_chart_by_chapter(focus_annos, comments_annos, prototype_annos)
 
     body.write('Select details to include in the overview')
 
     # split_by_files = body.checkbox('Files')
     # split_by_labels = body.checkbox('Labels')
-
+    view = project.select(
+        annotation=project.feature_path(layer, feature),
+        annotators=selected_annotators,
+        source_files=selected_files
+    )
     count_fn = view.value_counts  # if split_by_labels else view.count
     levels = ["source_file"]
     count_overview = count_fn(grouped_by=levels)
@@ -271,12 +268,6 @@ if project:
     body.write(count_overview.T)
 
     body.write('## Focus Progress')
-
-    focus_layer = 'webanno.custom.Focus1'
-    feature = 'Focus'
-    focus_layer_feature_path = f'{focus_layer}>{feature}'
-    focus_annos = project.select(annotation=focus_layer_feature_path)
-
     show_percentages_per_file = body.checkbox('Show completion status of files.')
     body.write(progress_chart(view, normalize=show_percentages_per_file))
 
